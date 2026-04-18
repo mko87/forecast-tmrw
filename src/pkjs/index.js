@@ -1,0 +1,286 @@
+var Clay  = require('pebble-clay');
+var clay  = new Clay(require('./config.js'));
+
+// Message key indices (must match package.json messageKeys order)
+var KEY = {
+  TEMP_CURRENT:   0,
+  WEATHER_STR:    1,
+  RAIN_PROB:      2,
+  RAIN_MM:        3,
+  FORECAST_TEMP:  4,
+  FORECAST_RAIN:  5,
+  FORECAST_HOURS: 6,
+  SUNRISE_MIN:    7,
+  SUNSET_MIN:     8,
+  LANGUAGE_DE:    9,
+  DEBUG_ENABLED:  10,
+  STATUS_MSG:     11,
+  FETCH_TRIGGER:  12
+};
+
+var TEST_API_KEY = '';
+
+var DEBUG_LOG_KEY = 'forecast_debug_log';
+var MAX_LOG_ENTRIES = 40;
+
+// ── Weather code translation ───────────────────────────────────────────────
+
+var WEATHER_CODES_EN = {
+  1000: 'Clear',
+  1001: 'Cloudy',
+  1100: 'Mostly Clear',
+  1101: 'Partly Cloudy',
+  1102: 'Mostly Cloudy',
+  2000: 'Fog',
+  2100: 'Light Fog',
+  3000: 'Light Wind',
+  3001: 'Wind',
+  3002: 'Strong Wind',
+  4000: 'Drizzle',
+  4001: 'Rain',
+  4200: 'Light Rain',
+  4201: 'Heavy Rain',
+  5000: 'Snow',
+  5001: 'Flurries',
+  5100: 'Light Snow',
+  5101: 'Heavy Snow',
+  6000: 'Freezing Drizzle',
+  6001: 'Freezing Rain',
+  6200: 'Light Freezing Rain',
+  6201: 'Heavy Freezing Rain',
+  7000: 'Ice Pellets',
+  7101: 'Heavy Ice Pellets',
+  7102: 'Light Ice Pellets',
+  8000: 'Thunderstorm'
+};
+
+var WEATHER_CODES_DE = {
+  1000: 'Klar',
+  1001: 'Bew\u00f6lkt',
+  1100: '\xdcberwiegend klar',
+  1101: 'Teilweise bew\u00f6lkt',
+  1102: '\xdcberwiegend bew\u00f6lkt',
+  2000: 'Nebel',
+  2100: 'Leichter Nebel',
+  3000: 'Leichter Wind',
+  3001: 'Wind',
+  3002: 'Starker Wind',
+  4000: 'Nieselregen',
+  4001: 'Regen',
+  4200: 'Leichter Regen',
+  4201: 'Starker Regen',
+  5000: 'Schnee',
+  5001: 'Schneegest\u00f6ber',
+  5100: 'Leichter Schnee',
+  5101: 'Starker Schnee',
+  6000: 'Gefrierender Nieselregen',
+  6001: 'Gefrierender Regen',
+  6200: 'Leichter Gefrierregen',
+  6201: 'Starker Gefrierregen',
+  7000: 'Eisk\u00f6rner',
+  7101: 'Starke Eisk\u00f6rner',
+  7102: 'Leichte Eisk\u00f6rner',
+  8000: 'Gewitter'
+};
+
+function getWeatherStr(code, langDe) {
+  var codes = langDe ? WEATHER_CODES_DE : WEATHER_CODES_EN;
+  return codes[code] || (langDe ? 'Unbekannt' : 'Unknown');
+}
+
+// ── Debug log ──────────────────────────────────────────────────────────────
+
+function debugLog(msg) {
+  try {
+    var log = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || '[]');
+    var ts  = new Date().toISOString().slice(11, 19);
+    log.unshift('[' + ts + '] ' + msg);
+    if (log.length > MAX_LOG_ENTRIES) log.length = MAX_LOG_ENTRIES;
+    localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(log));
+  } catch(e) {}
+}
+
+function isDebugEnabled() {
+  try {
+    var settings = JSON.parse(localStorage.getItem('clay-settings') || '{}');
+    return !!settings.DEBUG_ENABLED;
+  } catch(e) { return false; }
+}
+
+function isLangDe() {
+  try {
+    var settings = JSON.parse(localStorage.getItem('clay-settings') || '{}');
+    return !!settings.LANGUAGE_DE;
+  } catch(e) { return false; }
+}
+
+function getApiKey() {
+  try {
+    var settings = JSON.parse(localStorage.getItem('clay-settings') || '{}');
+    var k = settings.apiKey || '';
+    if (k && k.length > 5) return k;
+  } catch(e) {}
+  return TEST_API_KEY;
+}
+
+// ── Sunrise/sunset calculation (simple) ───────────────────────────────────
+
+function calcSunriseSunset(lat, lon) {
+  var now      = new Date();
+  var dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  var B         = (360 / 365) * (dayOfYear - 81) * (Math.PI / 180);
+  var eot       = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+  var latR      = lat * Math.PI / 180;
+  var decl      = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180) * Math.PI / 180;
+  var ha        = Math.acos(-Math.tan(latR) * Math.tan(decl)) * 180 / Math.PI;
+  var tz        = -now.getTimezoneOffset() / 60;
+  var solar     = 12 - eot / 60;
+  var rise      = solar - ha / 15 + (lon / 15 - tz);
+  var set_time  = solar + ha / 15 + (lon / 15 - tz);
+  rise = ((rise % 24) + 24) % 24;
+  set_time = ((set_time % 24) + 24) % 24;
+  return {
+    sunriseMin: Math.round(rise * 60),
+    sunsetMin:  Math.round(set_time * 60)
+  };
+}
+
+// ── API fetch ─────────────────────────────────────────────────────────────
+
+function fetchWeather(lat, lon) {
+  var apiKey  = getApiKey();
+  var langDe  = isLangDe();
+  var debug   = isDebugEnabled();
+  var loc     = lat + ',' + lon;
+
+  var realtimeUrl = 'https://api.tomorrow.io/v4/weather/realtime'
+    + '?location=' + encodeURIComponent(loc)
+    + '&fields=temperature,weatherCode,precipitationProbability,precipitationIntensity'
+    + '&units=metric'
+    + '&apikey=' + apiKey;
+
+  var forecastUrl = 'https://api.tomorrow.io/v4/weather/forecast'
+    + '?location=' + encodeURIComponent(loc)
+    + '&timesteps=1h'
+    + '&fields=temperature,precipitationIntensity'
+    + '&units=metric'
+    + '&apikey=' + apiKey;
+
+  sendStatus(langDe ? 'Lade...' : 'Loading...');
+
+  // Realtime request
+  var xhr1 = new XMLHttpRequest();
+  xhr1.open('GET', realtimeUrl, true);
+  xhr1.onload = function() {
+    if (xhr1.status >= 200 && xhr1.status < 300) {
+      if (debug) debugLog('realtime OK ' + xhr1.status);
+      var rt;
+      try { rt = JSON.parse(xhr1.responseText); } catch(e) {
+        if (debug) debugLog('realtime parse error');
+        sendStatus(langDe ? 'Fehler (Parse)' : 'Error (parse)');
+        return;
+      }
+      var vals    = rt.data.values;
+      var tempX10 = Math.round(vals.temperature * 10);
+      var codeStr = getWeatherStr(vals.weatherCode, langDe);
+      var prob    = Math.round(vals.precipitationProbability || 0);
+      var mmX10   = Math.round((vals.precipitationIntensity || 0) * 10);
+
+      // Forecast request
+      var xhr2 = new XMLHttpRequest();
+      xhr2.open('GET', forecastUrl, true);
+      xhr2.onload = function() {
+        if (xhr2.status >= 200 && xhr2.status < 300) {
+          if (debug) debugLog('forecast OK ' + xhr2.status);
+          var fc;
+          try { fc = JSON.parse(xhr2.responseText); } catch(e) {
+            if (debug) debugLog('forecast parse error');
+            sendStatus(langDe ? 'Fehler (Parse)' : 'Error (parse)');
+            return;
+          }
+
+          var intervals = fc.timelines.hourly.slice(0, 24);
+          var fTemps  = new Int16Array(24);
+          var fRains  = new Int16Array(24);
+          var fHours  = new Uint8Array(24);
+
+          for (var i = 0; i < intervals.length; i++) {
+            var iv = intervals[i];
+            var t  = new Date(iv.time);
+            fHours[i]  = t.getHours();
+            fTemps[i]  = Math.round(iv.values.temperature * 10);
+            fRains[i]  = Math.round((iv.values.precipitationIntensity || 0) * 10);
+          }
+
+          var sun = calcSunriseSunset(lat, lon);
+
+          var msg = {};
+          msg[KEY.TEMP_CURRENT]   = tempX10;
+          msg[KEY.WEATHER_STR]    = codeStr;
+          msg[KEY.RAIN_PROB]      = prob;
+          msg[KEY.RAIN_MM]        = mmX10;
+          msg[KEY.FORECAST_TEMP]  = Array.from(new Uint8Array(fTemps.buffer));
+          msg[KEY.FORECAST_RAIN]  = Array.from(new Uint8Array(fRains.buffer));
+          msg[KEY.FORECAST_HOURS] = Array.from(fHours);
+          msg[KEY.SUNRISE_MIN]    = sun.sunriseMin;
+          msg[KEY.SUNSET_MIN]     = sun.sunsetMin;
+          msg[KEY.LANGUAGE_DE]    = langDe ? 1 : 0;
+
+          Pebble.sendAppMessage(msg,
+            function() { if (debug) debugLog('send OK'); },
+            function(e) { if (debug) debugLog('send fail: ' + e.error); }
+          );
+        } else {
+          if (debug) debugLog('forecast HTTP ' + xhr2.status);
+          sendStatus((langDe ? 'Fehler' : 'Error') + ' ' + xhr2.status);
+        }
+      };
+      xhr2.onerror = function() {
+        if (debug) debugLog('forecast network error');
+        sendStatus(langDe ? 'Netzwerkfehler' : 'Network error');
+      };
+      xhr2.send();
+    } else {
+      if (debug) debugLog('realtime HTTP ' + xhr1.status);
+      sendStatus((langDe ? 'Fehler' : 'Error') + ' ' + xhr1.status);
+    }
+  };
+  xhr1.onerror = function() {
+    if (debug) debugLog('realtime network error');
+    sendStatus(langDe ? 'Netzwerkfehler' : 'Network error');
+  };
+  xhr1.send();
+}
+
+function sendStatus(msg) {
+  Pebble.sendAppMessage({11: msg}, function(){}, function(){});
+}
+
+// ── GPS + trigger ─────────────────────────────────────────────────────────
+
+function startFetch() {
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      fetchWeather(pos.coords.latitude, pos.coords.longitude);
+    },
+    function(err) {
+      var langDe = isLangDe();
+      var debug  = isDebugEnabled();
+      if (debug) debugLog('GPS error: ' + err.message);
+      sendStatus(langDe ? 'GPS-Fehler' : 'GPS error');
+    },
+    { timeout: 15000, maximumAge: 60000 }
+  );
+}
+
+// ── Pebble events ─────────────────────────────────────────────────────────
+
+Pebble.addEventListener('ready', function() {
+  startFetch();
+});
+
+Pebble.addEventListener('appmessage', function(e) {
+  if (e.payload[KEY.FETCH_TRIGGER]) {
+    startFetch();
+  }
+});

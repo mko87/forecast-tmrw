@@ -1,0 +1,5 @@
+build/
+node_modules/
+*.pbw
+.pebble-linked-sdk
+.lock-waf_linux_build

@@ -1,0 +1,44 @@
+{
+  "name": "forecast-tmrw",
+  "author": "mko87",
+  "version": "0.1.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "forecast-tmrw",
+    "uuid": "b086941a-e104-4140-9e3b-cb92fdf8ed24",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "TEMP_CURRENT",
+      "WEATHER_STR",
+      "RAIN_PROB",
+      "RAIN_MM",
+      "FORECAST_TEMP",
+      "FORECAST_RAIN",
+      "FORECAST_HOURS",
+      "SUNRISE_MIN",
+      "SUNSET_MIN",
+      "LANGUAGE_DE",
+      "DEBUG_ENABLED",
+      "STATUS_MSG",
+      "FETCH_TRIGGER"
+    ],
+    "resources": {
+      "media": []
+    }
+  }
+}
