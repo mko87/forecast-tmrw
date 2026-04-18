@@ -388,8 +388,7 @@ static void prv_init(void) {
   app_message_register_inbox_received(inbox_received);
   app_message_register_inbox_dropped(inbox_dropped);
   app_message_open(512, 64);
-
-  send_fetch_request();
+  // JS triggers fetch automatically on ready; no outbox needed at startup
 }
 
 static void prv_deinit(void) {

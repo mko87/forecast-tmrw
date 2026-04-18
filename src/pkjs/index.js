@@ -44,10 +44,29 @@ var clayConfig = [
         'defaultValue': 'Debug log is stored internally. Enable above to activate logging.'
       }
     ]
+  },
+  {
+    'type': 'submit',
+    'defaultValue': 'Save / Speichern'
   }
 ];
 
-var clay = new Clay(clayConfig);
+var clay = new Clay(clayConfig, null, {autoHandleEvents: false});
+
+Pebble.addEventListener('showConfiguration', function() {
+  Pebble.openURL(clay.generateUrl());
+});
+
+Pebble.addEventListener('webviewclosed', function(e) {
+  if (e && e.response) {
+    try {
+      var dict = clay.getSettings(e.response);
+      Pebble.sendAppMessage(dict, function(){}, function(){});
+    } catch(err) {}
+  }
+  // Refetch weather with new settings
+  startFetch();
+});
 
 // Message key indices (must match package.json messageKeys order)
 var KEY = {
