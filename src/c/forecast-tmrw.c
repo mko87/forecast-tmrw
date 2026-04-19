@@ -36,6 +36,7 @@ static bool    s_language_de = false;
 
 static char s_temp_str[20];
 static char s_rain_str[48];
+static char s_status_str[64] = "Loading...";
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -272,7 +273,9 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 
   t = dict_find(iter, MESSAGE_KEY_STATUS_MSG);
   if (t && !s_data_loaded) {
-    text_layer_set_text(s_loading_layer, t->value->cstring);
+    strncpy(s_status_str, t->value->cstring, sizeof(s_status_str) - 1);
+    s_status_str[sizeof(s_status_str) - 1] = '\0';
+    text_layer_set_text(s_loading_layer, s_status_str);
   }
 
   update_ui();
@@ -326,7 +329,7 @@ static void window_load(Window *window) {
   text_layer_set_text_color(s_loading_layer, GColorWhite);
   text_layer_set_font(s_loading_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_text_alignment(s_loading_layer, GTextAlignmentCenter);
-  text_layer_set_text(s_loading_layer, s_language_de ? "Lade..." : "Loading...");
+  text_layer_set_text(s_loading_layer, s_status_str);
   layer_add_child(s_content_layer, text_layer_get_layer(s_loading_layer));
 
   // Temperature (large)
