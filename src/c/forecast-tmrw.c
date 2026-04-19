@@ -1,13 +1,15 @@
 #include <pebble.h>
 
 #define FORECAST_COUNT 24
-#define Y_LABEL_W      20
-#define TITLE_H        13
-#define X_LABEL_H      11
-#define CHART_TOTAL_H  46
-#define CHART_INNER_H  (CHART_TOTAL_H - TITLE_H - X_LABEL_H)  // 22
+#define Y_LABEL_W      22
+#define X_LABEL_H      12
+#define CHART_TOTAL_H  54
+#define CHART_INNER_H  (CHART_TOTAL_H - X_LABEL_H)  // 42
 
-#define WEATHER_SECTION_H  56
+#define HDR_TEMP_H   28
+#define HDR_LINE_H   14
+#define HEADER_H     (HDR_TEMP_H + HDR_LINE_H + HDR_LINE_H)  // 56
+#define CONTENT_H    (HEADER_H + 2 + CHART_TOTAL_H + 2 + CHART_TOTAL_H)  // 168
 
 static Window *s_window;
 
@@ -62,25 +64,16 @@ static int16_t arr_max(int16_t *arr, int n) {
 // ── chart drawing ─────────────────────────────────────────────────────────
 
 static void draw_chart(GContext *ctx, GRect bounds, int16_t *data, bool is_rain) {
-  // Layout inside canvas layer (bounds.origin is 0,0 in local coords)
   int cw = bounds.size.w;
 
-  int title_y  = 0;
   int chart_x  = Y_LABEL_W;
-  int chart_y  = TITLE_H;
-  int chart_w  = cw - Y_LABEL_W - 1;
+  int chart_y  = 0;
+  int chart_w  = cw - Y_LABEL_W - 2;
   int chart_h  = CHART_INNER_H;
-  int xlbl_y   = TITLE_H + CHART_INNER_H + 2;
+  int xlbl_y   = CHART_INNER_H + 1;
 
-  // Title
   GFont small_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
   graphics_context_set_text_color(ctx, GColorWhite);
-  const char *title = is_rain
-    ? (s_language_de ? "Regen 24h (mm/h)" : "Rain 24h (mm/h)")
-    : (s_language_de ? "Temp 24h (\260C)"  : "Temp 24h (\260C)");
-  graphics_draw_text(ctx, title, small_font,
-    GRect(chart_x, title_y, chart_w, TITLE_H),
-    GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
 
   // Min / max
   int16_t dmin = arr_min(data, FORECAST_COUNT);
@@ -92,15 +85,24 @@ static void draw_chart(GContext *ctx, GRect bounds, int16_t *data, bool is_rain)
     range = dmax - dmin;
   }
 
-  // Y-axis labels (max top, min bottom)
-  char ymax_str[16], ymin_str[16];
-  format_decimal(ymax_str, sizeof(ymax_str), (int32_t)dmax);
-  format_decimal(ymin_str, sizeof(ymin_str), (int32_t)dmin);
+  // Y-axis labels — degree sign for temp, plain for rain (unit hint)
+  char ymax_str[20], ymin_str[20];
+  char ymax_raw[16], ymin_raw[16];
+  format_decimal(ymax_raw, sizeof(ymax_raw), (int32_t)dmax);
+  format_decimal(ymin_raw, sizeof(ymin_raw), (int32_t)dmin);
+  if (is_rain) {
+    snprintf(ymax_str, sizeof(ymax_str), "%s", ymax_raw);
+    snprintf(ymin_str, sizeof(ymin_str), "%s", ymin_raw);
+  } else {
+    snprintf(ymax_str, sizeof(ymax_str), "%s\260", ymax_raw);
+    snprintf(ymin_str, sizeof(ymin_str), "%s\260", ymin_raw);
+  }
+  // Max at top of chart area, min near bottom; inner is 42 → gap ≥14 between the two 14px labels
   graphics_draw_text(ctx, ymax_str, small_font,
-    GRect(0, chart_y, Y_LABEL_W - 1, TITLE_H),
+    GRect(0, chart_y - 2, Y_LABEL_W - 1, 14),
     GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
   graphics_draw_text(ctx, ymin_str, small_font,
-    GRect(0, chart_y + chart_h - TITLE_H, Y_LABEL_W - 1, TITLE_H),
+    GRect(0, chart_y + chart_h - 13, Y_LABEL_W - 1, 14),
     GTextOverflowModeWordWrap, GTextAlignmentRight, NULL);
 
   // Night shading (stipple pattern)
@@ -150,14 +152,12 @@ static void draw_chart(GContext *ctx, GRect bounds, int16_t *data, bool is_rain)
   for (int i = 0; i < FORECAST_COUNT; i++) {
     if (s_forecast_hours[i] % 6 != 0) continue;
     int tx = chart_x + (i * chart_w) / FORECAST_COUNT + chart_w / (2 * FORECAST_COUNT);
-    // Tick
-    graphics_draw_line(ctx, GPoint(tx, chart_y + chart_h), GPoint(tx, chart_y + chart_h + 3));
-    // Label (avoid overlap: min 18px apart)
-    if (tx - last_lbl_x >= 18) {
+    graphics_draw_line(ctx, GPoint(tx, chart_y + chart_h), GPoint(tx, chart_y + chart_h + 2));
+    if (tx - last_lbl_x >= 22) {
       char lbl[4];
       snprintf(lbl, sizeof(lbl), "%02d", s_forecast_hours[i]);
       graphics_draw_text(ctx, lbl, small_font,
-        GRect(tx - 8, xlbl_y, 18, X_LABEL_H),
+        GRect(tx - 11, xlbl_y, 22, X_LABEL_H),
         GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);
       last_lbl_x = tx;
     }
@@ -299,25 +299,20 @@ static void window_load(Window *window) {
   int w = full.size.w;
   int h = full.size.h;
 
-  // Compact fixed layout — no scroll, no status bar
-  // y=0..26:  temperature (GOTHIC_24_BOLD)
-  // y=26..40: weather code (GOTHIC_14)
-  // y=40..54: rain info (GOTHIC_14)
-  // y=56..102: temp chart (46px)
-  // y=104..150: rain chart (46px)
-  int top_y   = 0;
-  int chart1_y = WEATHER_SECTION_H;                         // 56
-  int chart2_y = chart1_y + CHART_TOTAL_H + 2;              // 104
-  int content_bottom = chart2_y + CHART_TOTAL_H;            // 150
+  // Fixed compact layout, total 168px. Center vertically on taller screens.
+  // y=0..28:   temperature (GOTHIC_24_BOLD)
+  // y=28..42:  weather condition (GOTHIC_14)
+  // y=42..56:  rain info (GOTHIC_14)
+  // y=58..112: temp chart (54px, inner 42)
+  // y=114..168: rain chart (54px, inner 42)
+  int top_y = 0;
+  if (h > CONTENT_H) top_y = (h - CONTENT_H) / 2;
 
-  // Center content vertically if screen is taller (emery/chalk)
-  if (h > content_bottom) {
-    top_y = (h - content_bottom) / 2;
-    chart1_y += top_y;
-    chart2_y += top_y;
-  }
+  int hdr_y    = top_y;
+  int chart1_y = top_y + HEADER_H + 2;
+  int chart2_y = chart1_y + CHART_TOTAL_H + 2;
 
-  // Loading label (centered, covers whole area when no data)
+  // Loading label (centered, shown until data arrives)
   s_loading_layer = text_layer_create(GRect(0, h / 2 - 12, w, 24));
   text_layer_set_background_color(s_loading_layer, GColorClear);
   text_layer_set_text_color(s_loading_layer, GColorWhite);
@@ -326,16 +321,16 @@ static void window_load(Window *window) {
   text_layer_set_text(s_loading_layer, s_status_str);
   layer_add_child(root, text_layer_get_layer(s_loading_layer));
 
-  // Temperature (large)
-  s_temp_layer = text_layer_create(GRect(2, top_y, w - 4, 28));
+  // Temperature (big)
+  s_temp_layer = text_layer_create(GRect(2, hdr_y, w - 4, HDR_TEMP_H));
   text_layer_set_background_color(s_temp_layer, GColorClear);
   text_layer_set_text_color(s_temp_layer, GColorWhite);
   text_layer_set_font(s_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   text_layer_set_text_alignment(s_temp_layer, GTextAlignmentCenter);
   layer_add_child(root, text_layer_get_layer(s_temp_layer));
 
-  // Weather code
-  s_code_layer = text_layer_create(GRect(2, top_y + 26, w - 4, 14));
+  // Condition
+  s_code_layer = text_layer_create(GRect(2, hdr_y + HDR_TEMP_H, w - 4, HDR_LINE_H));
   text_layer_set_background_color(s_code_layer, GColorClear);
   text_layer_set_text_color(s_code_layer, GColorWhite);
   text_layer_set_font(s_code_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -343,7 +338,7 @@ static void window_load(Window *window) {
   layer_add_child(root, text_layer_get_layer(s_code_layer));
 
   // Rain info
-  s_rain_layer = text_layer_create(GRect(2, top_y + 40, w - 4, 14));
+  s_rain_layer = text_layer_create(GRect(2, hdr_y + HDR_TEMP_H + HDR_LINE_H, w - 4, HDR_LINE_H));
   text_layer_set_background_color(s_rain_layer, GColorClear);
   text_layer_set_text_color(s_rain_layer, GColorWhite);
   text_layer_set_font(s_rain_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
