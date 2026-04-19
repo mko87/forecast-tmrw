@@ -10,8 +10,9 @@ var clayConfig = [
     'items': [
       {
         'type': 'input',
-        'id': 'apiKey',
+        'messageKey': 'API_KEY',
         'label': 'Tomorrow.io API Key',
+        'defaultValue': '',
         'attributes': {
           'placeholder': 'Paste API key here...',
           'type': 'text'
@@ -41,7 +42,7 @@ var clayConfig = [
       },
       {
         'type': 'text',
-        'defaultValue': 'Debug log is stored internally. Enable above to activate logging.'
+        'defaultValue': '<b style="color:#ccc">Debug Log:</b><div id="ft-debug-log" style="font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:160px;overflow-y:auto;background:#1a1a1a;color:#aaa;padding:6px;margin-top:4px;border-radius:4px">(enable debug + fetch to see log)</div>'
       }
     ]
   },
@@ -51,7 +52,20 @@ var clayConfig = [
   }
 ];
 
-var clay = new Clay(clayConfig, null, {autoHandleEvents: false});
+function clayCustomFn() {
+  // Runs in webview context — read debug log from shared localStorage
+  var el = document.getElementById('ft-debug-log');
+  if (!el) return;
+  try {
+    var raw = localStorage.getItem('forecast_debug_log');
+    var log = raw ? JSON.parse(raw) : [];
+    el.textContent = log.length ? log.join('\n') : '(no entries yet)';
+  } catch(e) {
+    el.textContent = '(error reading log)';
+  }
+}
+
+var clay = new Clay(clayConfig, clayCustomFn, {autoHandleEvents: false});
 
 Pebble.addEventListener('showConfiguration', function() {
   Pebble.openURL(clay.generateUrl());
@@ -143,7 +157,7 @@ function isDebugEnabled() { return !!getSettings().DEBUG_ENABLED; }
 function isLangDe()       { return !!getSettings().LANGUAGE_DE; }
 
 function getApiKey() {
-  var k = getSettings().apiKey || '';
+  var k = getSettings().API_KEY || '';
   return (k && k.length > 5) ? k : '';
 }
 

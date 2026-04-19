@@ -35,7 +35,8 @@
       "LANGUAGE_DE",
       "DEBUG_ENABLED",
       "STATUS_MSG",
-      "FETCH_TRIGGER"
+      "FETCH_TRIGGER",
+      "API_KEY"
     ],
     "resources": {
       "media": []
