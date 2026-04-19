@@ -1,19 +1,15 @@
 #include <pebble.h>
 
 #define FORECAST_COUNT 24
-#define Y_LABEL_W      22
-#define CHART_INNER_H  40
-#define X_LABEL_H      13
-#define TITLE_H        15
-#define CHART_TOTAL_H  (TITLE_H + CHART_INNER_H + X_LABEL_H)  // 68
+#define Y_LABEL_W      20
+#define TITLE_H        13
+#define X_LABEL_H      11
+#define CHART_TOTAL_H  46
+#define CHART_INNER_H  (CHART_TOTAL_H - TITLE_H - X_LABEL_H)  // 22
 
-#define WEATHER_SECTION_H  68
-#define CONTENT_H          (WEATHER_SECTION_H + CHART_TOTAL_H * 2)  // 204
+#define WEATHER_SECTION_H  56
 
-static Window          *s_window;
-static StatusBarLayer  *s_status_bar;
-static ScrollLayer     *s_scroll_layer;
-static Layer           *s_content_layer;
+static Window *s_window;
 
 static TextLayer *s_temp_layer;
 static TextLayer *s_code_layer;
@@ -298,70 +294,70 @@ static void send_fetch_request(void) {
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect full = layer_get_bounds(root);
-
   window_set_background_color(window, GColorBlack);
 
-  // Status bar
-  s_status_bar = status_bar_layer_create();
-  status_bar_layer_set_colors(s_status_bar, GColorBlack, GColorWhite);
-  status_bar_layer_set_separator_mode(s_status_bar, StatusBarLayerSeparatorModeNone);
-  layer_add_child(root, status_bar_layer_get_layer(s_status_bar));
-
-  int sbh = STATUS_BAR_LAYER_HEIGHT;
-  GRect scroll_frame = GRect(0, sbh, full.size.w, full.size.h - sbh);
-
-  // Scroll layer
-  s_scroll_layer = scroll_layer_create(scroll_frame);
-  scroll_layer_set_click_config_onto_window(s_scroll_layer, window);
-  scroll_layer_set_content_size(s_scroll_layer, GSize(full.size.w, CONTENT_H));
-  scroll_layer_set_content_offset(s_scroll_layer, GPointZero, false);
-  layer_add_child(root, scroll_layer_get_layer(s_scroll_layer));
-
-  // Content layer inside scroll
-  s_content_layer = layer_create(GRect(0, 0, full.size.w, CONTENT_H));
-  scroll_layer_add_child(s_scroll_layer, s_content_layer);
-
   int w = full.size.w;
+  int h = full.size.h;
 
-  // Loading label
-  s_loading_layer = text_layer_create(GRect(0, 60, w, 40));
+  // Compact fixed layout — no scroll, no status bar
+  // y=0..26:  temperature (GOTHIC_24_BOLD)
+  // y=26..40: weather code (GOTHIC_14)
+  // y=40..54: rain info (GOTHIC_14)
+  // y=56..102: temp chart (46px)
+  // y=104..150: rain chart (46px)
+  int top_y   = 0;
+  int chart1_y = WEATHER_SECTION_H;                         // 56
+  int chart2_y = chart1_y + CHART_TOTAL_H + 2;              // 104
+  int content_bottom = chart2_y + CHART_TOTAL_H;            // 150
+
+  // Center content vertically if screen is taller (emery/chalk)
+  if (h > content_bottom) {
+    top_y = (h - content_bottom) / 2;
+    chart1_y += top_y;
+    chart2_y += top_y;
+  }
+
+  // Loading label (centered, covers whole area when no data)
+  s_loading_layer = text_layer_create(GRect(0, h / 2 - 12, w, 24));
   text_layer_set_background_color(s_loading_layer, GColorClear);
   text_layer_set_text_color(s_loading_layer, GColorWhite);
   text_layer_set_font(s_loading_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_text_alignment(s_loading_layer, GTextAlignmentCenter);
   text_layer_set_text(s_loading_layer, s_status_str);
-  layer_add_child(s_content_layer, text_layer_get_layer(s_loading_layer));
+  layer_add_child(root, text_layer_get_layer(s_loading_layer));
 
   // Temperature (large)
-  s_temp_layer = text_layer_create(GRect(2, 0, w - 4, 36));
+  s_temp_layer = text_layer_create(GRect(2, top_y, w - 4, 28));
   text_layer_set_background_color(s_temp_layer, GColorClear);
   text_layer_set_text_color(s_temp_layer, GColorWhite);
-  text_layer_set_font(s_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
-  layer_add_child(s_content_layer, text_layer_get_layer(s_temp_layer));
+  text_layer_set_font(s_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+  text_layer_set_text_alignment(s_temp_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_temp_layer));
 
-  // Weather code string
-  s_code_layer = text_layer_create(GRect(2, 36, w - 4, 18));
+  // Weather code
+  s_code_layer = text_layer_create(GRect(2, top_y + 26, w - 4, 14));
   text_layer_set_background_color(s_code_layer, GColorClear);
   text_layer_set_text_color(s_code_layer, GColorWhite);
-  text_layer_set_font(s_code_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  layer_add_child(s_content_layer, text_layer_get_layer(s_code_layer));
+  text_layer_set_font(s_code_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_alignment(s_code_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_code_layer));
 
   // Rain info
-  s_rain_layer = text_layer_create(GRect(2, 54, w - 4, 14));
+  s_rain_layer = text_layer_create(GRect(2, top_y + 40, w - 4, 14));
   text_layer_set_background_color(s_rain_layer, GColorClear);
   text_layer_set_text_color(s_rain_layer, GColorWhite);
   text_layer_set_font(s_rain_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  layer_add_child(s_content_layer, text_layer_get_layer(s_rain_layer));
+  text_layer_set_text_alignment(s_rain_layer, GTextAlignmentCenter);
+  layer_add_child(root, text_layer_get_layer(s_rain_layer));
 
-  // Temperature chart canvas
-  s_temp_chart_layer = layer_create(GRect(0, WEATHER_SECTION_H, w, CHART_TOTAL_H));
+  // Charts
+  s_temp_chart_layer = layer_create(GRect(0, chart1_y, w, CHART_TOTAL_H));
   layer_set_update_proc(s_temp_chart_layer, temp_chart_update);
-  layer_add_child(s_content_layer, s_temp_chart_layer);
+  layer_add_child(root, s_temp_chart_layer);
 
-  // Rain chart canvas
-  s_rain_chart_layer = layer_create(GRect(0, WEATHER_SECTION_H + CHART_TOTAL_H, w, CHART_TOTAL_H));
+  s_rain_chart_layer = layer_create(GRect(0, chart2_y, w, CHART_TOTAL_H));
   layer_set_update_proc(s_rain_chart_layer, rain_chart_update);
-  layer_add_child(s_content_layer, s_rain_chart_layer);
+  layer_add_child(root, s_rain_chart_layer);
 
   update_ui();
 }
@@ -373,9 +369,6 @@ static void window_unload(Window *window) {
   text_layer_destroy(s_rain_layer);
   layer_destroy(s_temp_chart_layer);
   layer_destroy(s_rain_chart_layer);
-  layer_destroy(s_content_layer);
-  scroll_layer_destroy(s_scroll_layer);
-  status_bar_layer_destroy(s_status_bar);
 }
 
 // ── App init/deinit ───────────────────────────────────────────────────────

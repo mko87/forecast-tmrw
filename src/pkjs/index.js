@@ -231,52 +231,13 @@ Pebble.addEventListener('appmessage', function(e) {
 
 // ── Clay (after ready handler, wrapped in try-catch) ──────────────────────
 
-var clayConfig = [
-  { 'type': 'heading', 'defaultValue': 'forecast-tmrw' },
-  {
-    'type': 'section',
-    'items': [{
-      'type': 'input',
-      'messageKey': 'API_KEY',
-      'label': 'Tomorrow.io API Key',
-      'defaultValue': '',
-      'attributes': { 'placeholder': 'Paste API key...', 'type': 'text' }
-    }]
-  },
-  {
-    'type': 'section',
-    'items': [{
-      'type': 'toggle',
-      'messageKey': 'LANGUAGE_DE',
-      'label': 'Deutsch / German',
-      'defaultValue': false
-    }]
-  },
-  {
-    'type': 'section',
-    'items': [
-      {
-        'type': 'toggle',
-        'messageKey': 'DEBUG_ENABLED',
-        'label': 'Debug Log',
-        'defaultValue': true
-      },
-      {
-        'type': 'text',
-        'defaultValue': '<div id="ft-log"></div>'
-      }
-    ]
-  },
-  { 'type': 'submit', 'defaultValue': 'Save / Speichern' }
-];
-
 function buildLogHtml() {
   var log = getDebugLog();
   var body = log.length
     ? log.map(function(l) {
         return l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }).join('\n')
-    : '(no entries yet — open app first)';
+    : '(no entries yet - open app first)';
   return '<b style="color:#ccc">Debug Log:</b>'
     + '<pre style="font-size:10px;font-family:monospace;white-space:pre-wrap;'
     + 'word-break:break-all;max-height:180px;overflow-y:auto;background:#1a1a1a;'
@@ -284,28 +245,55 @@ function buildLogHtml() {
     + body + '</pre>';
 }
 
+function buildClayConfig() {
+  return [
+    { 'type': 'heading', 'defaultValue': 'forecast-tmrw' },
+    {
+      'type': 'section',
+      'items': [{
+        'type': 'input',
+        'messageKey': 'API_KEY',
+        'label': 'Tomorrow.io API Key',
+        'defaultValue': '',
+        'attributes': { 'placeholder': 'Paste API key...', 'type': 'text' }
+      }]
+    },
+    {
+      'type': 'section',
+      'items': [{
+        'type': 'toggle',
+        'messageKey': 'LANGUAGE_DE',
+        'label': 'Deutsch / German',
+        'defaultValue': false
+      }]
+    },
+    {
+      'type': 'section',
+      'items': [
+        {
+          'type': 'toggle',
+          'messageKey': 'DEBUG_ENABLED',
+          'label': 'Debug Log',
+          'defaultValue': true
+        },
+        {
+          'type': 'text',
+          'defaultValue': buildLogHtml()
+        }
+      ]
+    },
+    { 'type': 'submit', 'defaultValue': 'Save / Speichern' }
+  ];
+}
+
 try {
   var Clay = require('pebble-clay');
-  // Build config snapshot so we can inject log HTML on each open
-  var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
   Pebble.addEventListener('showConfiguration', function() {
     debugLog('config open');
-    // Inject current debug log into the text component's defaultValue
     try {
-      for (var i = 0; i < clayConfig.length; i++) {
-        var s = clayConfig[i];
-        if (s.items) {
-          for (var j = 0; j < s.items.length; j++) {
-            if (s.items[j].type === 'text') {
-              s.items[j].defaultValue = buildLogHtml();
-            }
-          }
-        }
-      }
-    } catch(e) { debugLog('log inject err: ' + e.message); }
-    try {
-      Pebble.openURL(clay.generateUrl());
+      var freshClay = new Clay(buildClayConfig(), null, { autoHandleEvents: false });
+      Pebble.openURL(freshClay.generateUrl());
     } catch(e) {
       debugLog('openURL err: ' + e.message);
     }
@@ -315,7 +303,8 @@ try {
     debugLog('config closed');
     if (e && e.response) {
       try {
-        var dict = clay.getSettings(e.response);
+        var tmpClay = new Clay(buildClayConfig(), null, { autoHandleEvents: false });
+        var dict = tmpClay.getSettings(e.response);
         Pebble.sendAppMessage(dict,
           function() { debugLog('settings forwarded'); },
           function(er) { debugLog('settings forward err'); }
