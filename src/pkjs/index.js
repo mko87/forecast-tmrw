@@ -189,9 +189,11 @@ function fetchWeather(lat, lon) {
   var debug  = isDebugEnabled();
 
   if (!apiKey) {
+    debugLog('No API key in settings');
     sendStatus(langDe ? 'Kein API-Key' : 'No API key');
     return;
   }
+  debugLog('API key found, fetching...');
 
   var loc = lat + ',' + lon;
   var baseUrl = 'https://api.tomorrow.io/v4/weather/';
@@ -213,11 +215,11 @@ function fetchWeather(lat, lon) {
   xhr1.open('GET', realtimeUrl, true);
   xhr1.onload = function() {
     if (xhr1.status >= 200 && xhr1.status < 300) {
-      if (debug) debugLog('realtime OK');
+      debugLog('realtime OK');
       var rt;
       try { rt = JSON.parse(xhr1.responseText); }
       catch(e) {
-        if (debug) debugLog('realtime parse error');
+        debugLog('realtime parse error');
         sendStatus(langDe ? 'Fehler (Parse)' : 'Error (parse)');
         return;
       }
@@ -231,11 +233,11 @@ function fetchWeather(lat, lon) {
       xhr2.open('GET', forecastUrl, true);
       xhr2.onload = function() {
         if (xhr2.status >= 200 && xhr2.status < 300) {
-          if (debug) debugLog('forecast OK');
+          debugLog('forecast OK');
           var fc;
           try { fc = JSON.parse(xhr2.responseText); }
           catch(e) {
-            if (debug) debugLog('forecast parse error');
+            debugLog('forecast parse error');
             sendStatus(langDe ? 'Fehler (Parse)' : 'Error (parse)');
             return;
           }
@@ -268,26 +270,26 @@ function fetchWeather(lat, lon) {
           msg[KEY.LANGUAGE_DE]    = langDe ? 1 : 0;
 
           Pebble.sendAppMessage(msg,
-            function() { if (debug) debugLog('send OK'); },
-            function(e) { if (debug) debugLog('send fail: ' + (e && e.error)); }
+            function() { debugLog('send OK'); },
+            function(e) { debugLog('send fail: ' + (e && e.error)); }
           );
         } else {
-          if (debug) debugLog('forecast HTTP ' + xhr2.status);
+          debugLog('forecast HTTP ' + xhr2.status);
           sendStatus((langDe ? 'Fehler' : 'Error') + ' ' + xhr2.status);
         }
       };
       xhr2.onerror = function() {
-        if (debug) debugLog('forecast network error');
+        debugLog('forecast network error');
         sendStatus(langDe ? 'Netzwerkfehler' : 'Network error');
       };
       xhr2.send();
     } else {
-      if (debug) debugLog('realtime HTTP ' + xhr1.status);
+      debugLog('realtime HTTP ' + xhr1.status);
       sendStatus((langDe ? 'Fehler' : 'Error') + ' ' + xhr1.status);
     }
   };
   xhr1.onerror = function() {
-    if (debug) debugLog('realtime network error');
+    debugLog('realtime network error');
     sendStatus(langDe ? 'Netzwerkfehler' : 'Network error');
   };
   xhr1.send();
@@ -302,15 +304,19 @@ function sendStatus(msg) {
 // ── GPS + trigger ─────────────────────────────────────────────────────────
 
 function startFetch() {
+  debugLog('GPS request start');
+  sendStatus('GPS...');
   navigator.geolocation.getCurrentPosition(
     function(pos) {
-      fetchWeather(pos.coords.latitude, pos.coords.longitude);
+      var lat = pos.coords.latitude;
+      var lon = pos.coords.longitude;
+      debugLog('GPS OK ' + lat.toFixed(2) + ',' + lon.toFixed(2));
+      fetchWeather(lat, lon);
     },
     function(err) {
-      var langDe = isLangDe();
-      var debug  = isDebugEnabled();
-      if (debug) debugLog('GPS error: ' + err.message);
-      sendStatus(langDe ? 'GPS-Fehler' : 'GPS error');
+      var msg = 'GPS err ' + err.code + ': ' + err.message;
+      debugLog(msg);
+      sendStatus('GPS err ' + err.code);
     },
     { timeout: 15000, maximumAge: 60000 }
   );
@@ -319,6 +325,8 @@ function startFetch() {
 // ── Pebble events ─────────────────────────────────────────────────────────
 
 Pebble.addEventListener('ready', function() {
+  debugLog('JS ready');
+  sendStatus('JS ready, getting GPS...');
   startFetch();
 });
 
